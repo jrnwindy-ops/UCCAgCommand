@@ -2751,7 +2751,7 @@ const CROPS = {
    Block as the atomic 75-ac unit ((per ranch manager)). N/2 & S/2 are activity-level
    coverage tags, not separate fields. polygonProvisional=true means the
    boundary was constructed from the centroid pin and must be replaced by a
-   real survey/KML. Field IDs slugified Five-Crowns style: TRI11-220 -> TRI11220
+   real survey/KML. Field IDs slugified UCC style: TRI11-220 -> TRI11220
 */
 /* Top-level load registry — keyed by load id. Populated from db.loadLoads()
    at boot, after FIELDS so lot trace-back lookups resolve. */
@@ -9561,7 +9561,7 @@ async function generateAuditPackage(){
     /* Generate + download */
     const blob = await zip.generateAsync({type:'blob', compression:'DEFLATE', compressionOptions:{level:6}});
     const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
-    const filename = `five_crowns_${audit.folderPrefix}_${stamp}.zip`;
+    const filename = `ucc_${audit.folderPrefix}_${stamp}.zip`;
     triggerDownload(blob, filename);
     flash(`✓ ${audit.short} package ready — ${filesAdded} document${filesAdded===1?'':'s'} included`);
     closeAuditPackageModal();
@@ -13807,7 +13807,7 @@ async function generateChecklistPdf(){
     }
 
     const stamp = new Date().toISOString().slice(0,10).replace(/-/g,'');
-    const filename = `five_crowns_checklist_${stamp}.pdf`;
+    const filename = `ucc_checklist_${stamp}.pdf`;
     const blob = doc.output('blob');
     triggerDownload(blob, filename);
     flash('Checklist ready — download started');
