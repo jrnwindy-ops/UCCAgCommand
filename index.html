@@ -15231,6 +15231,7 @@ function markTaskComplete(fieldId, taskId){
     if(tyId === 'spray'){
       if(act.reiHours) applyREI(fieldId, act.reiHours, nowIso);
       if(act.phiDays)  applyPHI(fieldId, act.phiDays, nowIso);
+      if(DB_ENABLED) db.saveField(fieldId);   // persist REI/PHI so it survives reload
     }
     if(tyId === 'irrigate'){
       f.lastIrrigationAt = nowIso;
@@ -15653,6 +15654,7 @@ function commitCheckout(fieldId){
     if(act.type === 'spray'){
       if(act.reiHours) applyREI(fieldId, act.reiHours, act.performedAt);
       if(act.phiDays)  applyPHI(fieldId, act.phiDays, act.performedAt);
+      if(DB_ENABLED) db.saveField(fieldId);   // persist REI/PHI so it survives reload
     }
     // Irrigation completions update lastIrrigationAt AND mark the field WET
     // (yellow caution — scout/inspect OK, no heavy equipment) for the dry-down
