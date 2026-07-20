@@ -17403,7 +17403,7 @@ function renderWarRoomData(){
   const dateStr = now.toLocaleDateString(lang==='es'?'es-MX':'en-US',{weekday:'long',month:'long',day:'numeric'});
   const tb = document.getElementById('wr-topbar');
   if(tb) tb.innerHTML =
-    `<div class="wr-tb-brand"><span class="wr-tb-crown">👑</span>`+
+    `<div class="wr-tb-brand">`+
       `<div><div class="wr-tb-title">UCC</div><div class="wr-tb-sub">${t('wrTitle')}</div></div></div>`+
     `<div class="wr-tb-right"><div class="wr-tb-clock"><div class="wr-tb-time">${timeStr}</div>`+
       `<div class="wr-tb-date">${dateStr}</div></div>`+
