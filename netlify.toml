@@ -1,0 +1,5 @@
+# Static single-file site — no build step.
+# Netlify serves the repo root as-is; index.html is the entry point.
+[build]
+  publish = "."
+  command = ""
