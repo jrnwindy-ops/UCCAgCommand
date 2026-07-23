@@ -480,6 +480,16 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .tl-rei{background:#FDEDEA;color:var(--st-blocked);border:1px solid #F4C9C1}
 .tl-phi{background:#FDEDEA;color:var(--st-blocked);border:1px solid #F4C9C1}
 .tl-rphi-missing{background:transparent;color:var(--tx4);border:1px dashed var(--bd);font-weight:500}
+.tl-wo-chip{display:inline-flex;align-items:center;gap:4px;background:var(--fc-navy,#1F2A44);color:#fff;border:none;border-radius:10px;padding:3px 9px;font-size:11px;font-weight:600;font-family:inherit;cursor:pointer;transition:opacity .15s}
+.tl-wo-chip:hover{opacity:.82}
+.tl-wo-chip:active{opacity:.65}
+/* Work-order detail read-out rows */
+.wod-row{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--bd)}
+.wod-row:last-child{border-bottom:none}
+.wod-k{flex:0 0 42%;font-size:12px;color:var(--tx3);font-weight:500}
+.wod-v{flex:1;font-size:12.5px;color:var(--tx1);font-weight:600;word-break:break-word}
+.wod-msg{white-space:pre-wrap;background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:10px;font-size:11.5px;line-height:1.5;color:var(--tx2);font-weight:400;max-height:210px;overflow:auto}
+.wod-pill{display:inline-block;border-radius:10px;padding:2px 9px;font-size:11px;font-weight:700}
 /* Spray rows are tappable to edit REI/PHI. A subtle hover/active hint makes
    this discoverable without shouting "I'm a button" — most users will find
    the affordance when they hunt for a fix. */
@@ -2123,13 +2133,14 @@ const db = {
     const row = {
       id:e.id, field_id:fieldId, type:e.type, coverage:e.coverage, performed_by:e.performedBy,
       performed_at:e.performedAt, notes:e.notes||'', photos:e.photos||[],
+      task_id:e.taskId||null,
       rei_hours:e.reiHours??null, phi_days:e.phiDays??null,
       supplement_product:e.supplementProduct||null, supplement_rate:e.supplementRate||null,
       other_task:e.otherTask||null,
       lot_ids:e.lotIds||[], override:e.override||null,
       inspection:e.inspection||null
     };
-    const { other_task, ...rowNoOptional } = row;
+    const { other_task, task_id, ...rowNoOptional } = row;
     return dbQueue.enqueue('saveActivity '+fieldId,
       ()=> sb.from('ucc_activities').upsert(row),
       ()=> sb.from('ucc_activities').upsert(rowNoOptional));
@@ -2452,6 +2463,7 @@ const db = {
         f.activities.push({id:a.id,type:a.type,coverage:a.coverage,performedBy:a.performed_by,
           performedAt:a.performed_at,notes:a.notes,photos:a.photos||[],reiHours:a.rei_hours,
           phiDays:a.phi_days,
+          taskId:a.task_id||undefined,
           supplementProduct:a.supplement_product||undefined,
           supplementRate:a.supplement_rate||undefined,
           otherTask:a.other_task||undefined,
@@ -2780,6 +2792,14 @@ const I18N = {
       // detail
       allFields:'All fields',details:'Details',compliance:'Compliance',
       reiClear:'No active REI',reiActive:'REI active',phiClear:'No active PHI',phiActive:'PHI active',
+      woViewChip:'Work order',woDetTitle:'Work order',woDetSub:'Assigned {0}',
+      woDetTasks:'Work',woDetCoverage:'Area',woDetAssignedTo:'Assigned to',woDetCrew:'Crew size',
+      woDetScheduled:'Scheduled for',woDetSent:'Sent',woDetStatus:'Status',woDetNotes:'Notes',
+      woDetRestrictions:'Restrictions',woDetCompleted:'Completed',woDetMessage:'Work order sent',
+      woDetUnassigned:'Not assigned to anyone',woDetNotSent:'Not sent — saved only',
+      woDetStatusScheduled:'Scheduled',woDetStatusSent:'Sent',woDetStatusCompleted:'Completed',
+      woDetStatusOverdue:'Overdue',woDetStatusCancelled:'Cancelled',
+      woDetAdhoc:'Logged directly — no work order',woDetClose:'Close',
       lastActivity:'Last activity',never:'No activity yet',
       activityLog:'Activity log',viewAll:'View all',noActivity:'No activity logged yet — log the first one below',
       logActivityFull:'Log activity',sendWorkOrder:'Assign Task',scheduleTask:'Schedule task',quickPhoto:'Quick photo',
@@ -3421,6 +3441,14 @@ const I18N = {
       notSet:'Sin definir',emptyTitle:'Sin campos aún',
       allFields:'Todos los campos',details:'Detalles',compliance:'Cumplimiento',
       reiClear:'Sin REI activo',reiActive:'REI activo',phiClear:'Sin PHI activo',phiActive:'PHI activo',
+      woViewChip:'Orden de trabajo',woDetTitle:'Orden de trabajo',woDetSub:'Asignada {0}',
+      woDetTasks:'Trabajo',woDetCoverage:'Área',woDetAssignedTo:'Asignada a',woDetCrew:'Tamaño de cuadrilla',
+      woDetScheduled:'Programada para',woDetSent:'Enviada',woDetStatus:'Estado',woDetNotes:'Notas',
+      woDetRestrictions:'Restricciones',woDetCompleted:'Completada',woDetMessage:'Orden de trabajo enviada',
+      woDetUnassigned:'No asignada a nadie',woDetNotSent:'No enviada — solo guardada',
+      woDetStatusScheduled:'Programada',woDetStatusSent:'Enviada',woDetStatusCompleted:'Completada',
+      woDetStatusOverdue:'Atrasada',woDetStatusCancelled:'Cancelada',
+      woDetAdhoc:'Registrada directamente — sin orden de trabajo',woDetClose:'Cerrar',
       lastActivity:'Última actividad',never:'Sin actividad aún',
       activityLog:'Registro de actividad',viewAll:'Ver todo',noActivity:'Sin actividad registrada — registra la primera abajo',
       logActivityFull:'Registrar actividad',sendWorkOrder:'Asignar Tarea',scheduleTask:'Programar tarea',quickPhoto:'Foto rápida',
@@ -7407,11 +7435,19 @@ function renderDetail(id){
         ? `<span class="bf-badge" title="${t('bfBadgeTooltip')}">${t('bfBadge')}</span>`
         : '';
       const bfDetail = a.isBackfilled ? renderBackfillDetail(a.performedAt, a.performedBy, a.loggedAt, a.loggedBy) : '';
+      /* Work-order chip — when this activity was auto-logged from a completed
+         task, link back to the originating work order so anyone reading the
+         timeline can see what was ordered and who it went to. Only rendered if
+         the source task still exists on the field. */
+      const srcTask = a.taskId ? (f.assignedTasks || []).find(tk => tk.id === a.taskId) : null;
+      const woChip = srcTask
+        ? `<button class="tl-wo-chip" data-wo-task="${escapeHtml(srcTask.id)}" title="${t('woDetTitle')}">📋 ${t('woViewChip')}</button>`
+        : '';
       return `<div class="tl-item${a.override?' tl-item-overridden':''}${a.type==='spray'?' tl-item-editable':''}"${a.type==='spray'?` data-edit-act="${a.id}"`:''}>`+
         `<div class="tl-dot ${a.type}">${actIcon(a.type)}</div>`+
         `<div class="tl-body">`+
           `<div class="tl-line1">${actLabel(a.type)}${notes}${ovBadge}${bfBadge}</div>`+
-          `<div class="tl-line2"><span>${dateStr}</span>${attr}${cov}${reiPhiBadges}</div>`+
+          `<div class="tl-line2"><span>${dateStr}</span>${attr}${cov}${reiPhiBadges}${woChip}</div>`+
           bfDetail+
           inspDetail+
           ovDetail+
@@ -7703,7 +7739,20 @@ function renderDetail(id){
       /* Don't capture taps on photos — those have their own click handlers
          for the lightbox. */
       if(e.target.closest('.tl-photo')) return;
+      /* The work-order chip sits inside spray rows, which are themselves
+         tappable to edit REI/PHI. Let the chip's own handler win. */
+      if(e.target.closest('.tl-wo-chip')) return;
       openEditRestrictionsModal(id, row.dataset.editAct);
+    };
+  });
+
+  /* Work-order chip — jump from an auto-logged activity back to the work order
+     that generated it. Bound on all timeline rows (not just editable spray
+     rows), and stops propagation so it never opens the edit modal underneath. */
+  document.querySelectorAll('#detail-scroll .tl-wo-chip[data-wo-task]').forEach(chip => {
+    chip.onclick = (e) => {
+      e.stopPropagation();
+      openWorkOrderDetailModal(id, chip.dataset.woTask);
     };
   });
 
@@ -15213,6 +15262,7 @@ function markTaskComplete(fieldId, taskId){
     seen.add(tyId);
     const act = {
       id: 'a_' + Date.now() + '_' + tyId,
+      taskId: tk.id,   // link back to the work order that generated this
       type: tyId,
       coverage: tk.coverage || 'full',
       performedBy: tk.assignedTo || t('attribGuy'),
@@ -15337,6 +15387,84 @@ async function handleCheckin(fieldId){
    On save, the activity record is updated AND applyREI/applyPHI re-run with
    the activity's performedAt so the field's restriction state stays accurate.
    Only spray-type activities are editable through this modal. */
+/* ── WORK ORDER DETAIL (read-only) ────────────────────────────────────────
+   Opened from the 📋 chip on an auto-logged activity. Shows the originating
+   work order exactly as it was assigned: what was ordered, where, who it went
+   to, when it was scheduled/sent, and the message the crew actually received.
+   Read-only by design — this is the audit view, not an edit surface. */
+function openWorkOrderDetailModal(fieldId, taskId){
+  const f = FIELDS[fieldId]; if(!f) return;
+  const tk = (f.assignedTasks || []).find(x => x.id === taskId);
+  if(!tk){ flash(t('woDetAdhoc')); return; }
+
+  const fmt = (iso, withTime) => {
+    if(!iso) return null;
+    const d = new Date(iso);
+    if(isNaN(d)) return null;
+    const opts = withTime
+      ? {month:'short', day:'numeric', year:'numeric', hour:'numeric', minute:'2-digit'}
+      : {month:'short', day:'numeric', year:'numeric'};
+    return d.toLocaleString(lang === 'es' ? 'es-MX' : 'en-US', opts);
+  };
+  const covMap = {full:t('covFull'), north:t('covN'), south:t('covS'), east:t('covE'), west:t('covW')};
+  const stMap  = {
+    scheduled:{lbl:t('woDetStatusScheduled'), bg:'#EEF2F7', fg:'#405070'},
+    sent:     {lbl:t('woDetStatusSent'),      bg:'#E8F1FA', fg:'#1F6FB2'},
+    completed:{lbl:t('woDetStatusCompleted'), bg:'#E8F5EC', fg:'#2E7D46'},
+    overdue:  {lbl:t('woDetStatusOverdue'),   bg:'#FDF3E3', fg:'#9A6A16'},
+    cancelled:{lbl:t('woDetStatusCancelled'), bg:'#F1F2F4', fg:'#6B7280'}
+  };
+  const st = stMap[tk.status] || stMap.scheduled;
+
+  const row = (k, v) => v
+    ? `<div class="wod-row"><div class="wod-k">${k}</div><div class="wod-v">${v}</div></div>`
+    : '';
+
+  const tasksTxt = (tk.tasks && tk.tasks.length) ? tk.tasks.map(escapeHtml).join(' · ') : null;
+  const restr = [];
+  if(tk.reiHours) restr.push(`REI ${tk.reiHours}h`);
+  if(tk.phiDays)  restr.push(`PHI ${tk.phiDays}d`);
+  const sentTxt = tk.sentAt
+    ? `${escapeHtml(tk.sentVia || '')} ${fmt(tk.sentAt, true) || ''}`.trim()
+    : t('woDetNotSent');
+  const material = tk.supplementProduct
+    ? escapeHtml([tk.supplementProduct, tk.supplementRate].filter(Boolean).join(' · '))
+    : null;
+
+  document.getElementById('modal-wo-body').innerHTML =
+    `<div class="modal-title">${t('woDetTitle')}</div>`+
+    `<div class="modal-sub">${escapeHtml(f.displayId)}${fmt(tk.assignedAt, true) ? ' · ' + t('woDetSub').replace('{0}', fmt(tk.assignedAt, true)) : ''}</div>`+
+
+    `<div style="margin-top:14px">`+
+      row(t('woDetStatus'), `<span class="wod-pill" style="background:${st.bg};color:${st.fg}">${st.lbl}</span>`)+
+      row(t('woDetTasks'), tasksTxt)+
+      row(t('woDetCoverage'), covMap[tk.coverage] || tk.coverage || covMap.full)+
+      row(t('woDetAssignedTo'), tk.assignedTo ? escapeHtml(tk.assignedTo) : `<span style="color:var(--tx3);font-weight:500">${t('woDetUnassigned')}</span>`)+
+      row(t('woDetCrew'), tk.crewSize ? String(tk.crewSize) : null)+
+      row(t('woDetScheduled'), fmt(tk.scheduledFor, false))+
+      row(t('woDetSent'), sentTxt)+
+      row(t('woDetRestrictions'), restr.length ? restr.join(' · ') : null)+
+      row(t('chemicalLabel'), material)+
+      row(t('woDetNotes'), tk.notes ? escapeHtml(tk.notes) : null)+
+      row(t('woDetCompleted'), fmt(tk.completedAt, true))+
+    `</div>`+
+
+    (tk.builtMessage
+      ? `<div class="form-row" style="margin-top:14px">`+
+          `<div class="form-label" style="margin-bottom:6px">${t('woDetMessage')}</div>`+
+          `<div class="wod-msg">${escapeHtml(tk.builtMessage)}</div>`+
+        `</div>`
+      : '')+
+
+    `<div class="modal-actions">`+
+      `<button class="btn-cancel" id="wod-close">${t('woDetClose')}</button>`+
+    `</div>`;
+
+  document.getElementById('wod-close').onclick = ()=> closeWorkOrderModal();
+  document.getElementById('modal-backdrop').classList.add('open');
+  document.getElementById('modal-wo').classList.add('open');
+}
+
 function openEditRestrictionsModal(fieldId, activityId){
   const f = FIELDS[fieldId]; if(!f) return;
   const act = (f.activities || []).find(a => a.id === activityId);
@@ -15597,6 +15725,7 @@ function commitCheckout(fieldId){
         // For "other", carry the specific task chosen at assign time.
         typedActivities.push({
           id: 'a_' + Date.now() + '_' + typedActivities.length,
+          taskId: tk.id,   // link back to the work order that generated this
           type: tyId,
           coverage: cov,
           performedBy: performer,
