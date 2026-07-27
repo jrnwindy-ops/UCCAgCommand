@@ -930,12 +930,15 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .wr-tb-date{font-size:11px;color:#F0C9A0;margin-top:3px}
 .wr-tb-exit{background:rgba(255,255,255,.16);border:none;color:#fff;border-radius:9px;padding:8px 13px;font-size:12px;font-weight:700;cursor:pointer}
 .wr-main{flex:1;display:grid;grid-template-columns:1.7fr 1fr;gap:10px;padding:10px;min-height:0}
-.wr-nowstrip{display:flex;align-items:center;gap:10px;padding:8px 14px;background:#0E141B;border-bottom:1px solid #1E2530;flex-shrink:0;overflow-x:auto;min-height:46px}
+.wr-nowstrip{display:flex;align-items:center;background:#0E141B;border-bottom:1px solid #1E2530;flex-shrink:0;overflow:hidden;min-height:46px;pointer-events:none}
+.wr-now-tag{flex-shrink:0;display:flex;align-items:center;gap:6px;font-size:10px;font-weight:800;letter-spacing:.1em;color:#1DD4C4;background:#0A1614;padding:0 14px;height:46px;border-right:1px solid #1E2530}
+.wr-now-track{display:inline-flex;align-items:center;gap:10px;white-space:nowrap;padding-left:10px;animation:wrnow 38s linear infinite;will-change:transform}
+@keyframes wrnow{from{transform:translateX(0)}to{transform:translateX(-50%)}}
 .wr-now-label{font-size:10px;font-weight:800;letter-spacing:.1em;color:#1DD4C4;white-space:nowrap;display:flex;align-items:center;gap:6px;flex-shrink:0}
 .wr-now-chip{display:flex;align-items:center;gap:8px;background:#11201E;border:1px solid #1DD4C4;border-radius:20px;padding:5px 13px;white-space:nowrap;flex-shrink:0}
 .wr-now-chip-boss{font-size:13px;font-weight:700;color:#C4FBF4}
 .wr-now-chip-meta{font-size:11.5px;color:#7FBDB4}
-.wr-now-empty{font-size:13px;color:#5A6472}
+.wr-now-empty{font-size:13px;color:#5A6472;padding-left:14px}
 .wr-mapwrap{position:relative;border-radius:12px;overflow:hidden;background:#10151b;min-height:0}
 .wr-left{display:flex;flex-direction:column;gap:10px;min-height:0}
 .wr-left .wr-mapwrap{flex:1;min-height:0}
@@ -17749,26 +17752,28 @@ function renderWarRoomData(){
   const exit = document.getElementById('wr-exit');
   if(exit) exit.onclick = ()=> showView('map');
 
-  // "On the field now" strip — every active crew, at a glance
+  // "On the field now" — a scrolling marquee (display-only, non-clickable),
+  // styled like the LIVE ticker at the bottom.
   const nowStrip = document.getElementById('wr-nowstrip');
   if(nowStrip){
     const live = [];
     for(const [fid, ci] of _activeCheckins){ if(FIELDS[fid]) live.push([fid, ci]); }
-    let chips = `<div class="wr-now-label"><span class="wr-live-dot"></span>${t('wrOnFieldNow')}</div>`;
+    const tag = `<div class="wr-now-tag"><span class="wr-live-dot"></span>${t('wrOnFieldNow')}</div>`;
     if(live.length){
-      chips += live.map(([fid, ci])=>{
+      const chips = live.map(([fid, ci])=>{
         const f = FIELDS[fid];
         const boss = escapeHtml(ci.crewBoss || ci.workerName || t('ciAnonymous'));
         const job = ci.job ? escapeHtml(ci.job) : '';
         const crew = ci.crewActual!=null ? `${ci.crewActual}${ci.crewRequested!=null?'/'+ci.crewRequested:''}` : '';
         const meta = [f.displayId||'', job, crew?`${crew} ${t('ciCrew')}`:''].filter(Boolean).join(' · ');
-        return `<div class="wr-now-chip"><span class="wr-now-chip-boss">👷 ${boss}</span>`+
-          `<span class="wr-now-chip-meta">${meta}</span></div>`;
+        return `<span class="wr-now-chip"><span class="wr-now-chip-boss">👷 ${boss}</span>`+
+          `<span class="wr-now-chip-meta">${meta}</span></span>`;
       }).join('');
+      // Duplicate the chip set so the marquee loops seamlessly at translateX(-50%).
+      nowStrip.innerHTML = tag + `<div class="wr-now-track">${chips}${chips}</div>`;
     } else {
-      chips += `<div class="wr-now-empty">${t('wrNobodyOnField')}</div>`;
+      nowStrip.innerHTML = tag + `<div class="wr-now-empty">${t('wrNobodyOnField')}</div>`;
     }
-    nowStrip.innerHTML = chips;
   }
 
   // Daily briefing — "what's going on at my ranch today" in plain language
@@ -17911,7 +17916,7 @@ function fitWarRoomMap(){
   let pts = [];
   Object.values(FIELDS).forEach(f=>{ const pp = polyPts(f); if(pp) pp.forEach(p=>pts.push(p)); });
   if(pts.length){
-    _wrMap.fitBounds(pts, {padding:[50,50], maxZoom:16});
+    _wrMap.fitBounds(pts, {padding:[16,16], maxZoom:17});
   }
 }
 
