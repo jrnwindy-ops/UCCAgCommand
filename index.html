@@ -17905,48 +17905,11 @@ function fitWarRoomMap(){
   };
   const polyPts = (f) => (f.polygon && f.polygon.length >= 3) ? f.polygon : null;
 
-  // 1) PRIORITY: frame where crews are RIGHT NOW (active check-ins). A live-ops
-  //    board should zoom to the action, not show empty ranches 60km away.
+  // UCC is a single compact ranch — always frame the WHOLE operation so owners
+  // see everything at once. Crews, restrictions, and wet blocks are color-coded
+  // on the map, so there's no need to zoom into one block when someone checks in.
   let pts = [];
-  for(const [fid] of _activeCheckins){
-    const f = FIELDS[fid]; if(!f) continue;
-    const pp = polyPts(f); if(pp) pp.forEach(p=>pts.push(p));
-  }
-
-  // 2) Else: today's activity locations.
-  if(pts.length === 0){
-    const {start} = todayBounds();
-    Object.values(FIELDS).forEach(f=>{
-      const recent = (f.activities||[]).some(a=> new Date(a.performedAt||a.createdAt||0).getTime() >= start);
-      if(recent){ const pp = polyPts(f); if(pp) pp.forEach(p=>pts.push(p)); }
-    });
-  }
-
-  // 3) Else: the DENSE core cluster (Orange Cove). We compute the median block
-  //    location and include only blocks within ~12km of it, so distant outliers
-  //    (R13 south, R1/R10 east) don't force a whole-valley zoom-out.
-  if(pts.length === 0){
-    const cents = Object.values(FIELDS).map(centroidOf).filter(Boolean);
-    if(cents.length){
-      const lats = cents.map(c=>c[0]).sort((a,b)=>a-b);
-      const lngs = cents.map(c=>c[1]).sort((a,b)=>a-b);
-      const medLat = lats[Math.floor(lats.length/2)];
-      const medLng = lngs[Math.floor(lngs.length/2)];
-      const NEAR_DEG = 0.11; // ~12 km
-      Object.values(FIELDS).forEach(f=>{
-        const c = centroidOf(f); if(!c) return;
-        if(Math.abs(c[0]-medLat) <= NEAR_DEG && Math.abs(c[1]-medLng) <= NEAR_DEG){
-          const pp = polyPts(f); if(pp) pp.forEach(p=>pts.push(p));
-        }
-      });
-    }
-  }
-
-  // 4) Last resort: every block with geometry.
-  if(pts.length === 0){
-    Object.values(FIELDS).forEach(f=>{ const pp=polyPts(f); if(pp) pp.forEach(p=>pts.push(p)); });
-  }
-
+  Object.values(FIELDS).forEach(f=>{ const pp = polyPts(f); if(pp) pp.forEach(p=>pts.push(p)); });
   if(pts.length){
     _wrMap.fitBounds(pts, {padding:[50,50], maxZoom:16});
   }
