@@ -2892,7 +2892,7 @@ const I18N = {
       woIrrigWetBody:'No heavy equipment or spray rigs until it dries.',
       woIrrigTypeLabel:'Irrigation type',
       woIrrigDaysLabel:'Days to dry / re-entry',
-      woIrrigDaysHelp:'Block stays restricted this many days (2 days + irrigation day = 3).',
+      woIrrigDaysHelp:'Days the block shows wet after irrigating. Default 1. Enter 0 for no wet flag.',
       irrigFlood:'Flood',irrigDrip:'Drip',irrigMicro:'Micro-sprinkler',irrigSprinkler:'Sprinkler',irrigFurrow:'Furrow',
       tlTaskAssigned:'Task assigned',daysWord:'days',irrigWetShort:'wet {0}d',
       woCrewLabel:'Crew size',woAssigneeLabel:'Assign to',woAssigneePlaceholder:'e.g. Miguel, Crew A',
@@ -3542,7 +3542,7 @@ const I18N = {
       woIrrigWetBody:'Sin equipo pesado ni fumigadoras hasta que seque.',
       woIrrigTypeLabel:'Tipo de riego',
       woIrrigDaysLabel:'Días para secar / reingreso',
-      woIrrigDaysHelp:'El bloque queda restringido estos días (2 días + el día de riego = 3).',
+      woIrrigDaysHelp:'Días que el bloque aparece mojado tras regar. Predeterminado 1. Ingrese 0 para no marcar.',
       irrigFlood:'Inundación',irrigDrip:'Goteo',irrigMicro:'Micro-aspersor',irrigSprinkler:'Aspersor',irrigFurrow:'Surco',
       tlTaskAssigned:'Tarea asignada',daysWord:'días',irrigWetShort:'mojado {0}d',
       woCrewLabel:'Tamaño cuadrilla',woAssigneeLabel:'Asignar a',woAssigneePlaceholder:'p.ej. Miguel, Cuadrilla A',
@@ -14551,7 +14551,7 @@ function openWorkOrderModal(fieldId, multiIds){
       `<div class="field-pair" style="margin-top:10px">`+
         `<div>`+
           `<div class="form-label">${t('woIrrigDaysLabel')}</div>`+
-          `<input type="number" class="text-input" id="wo-dry-days" min="1" max="14" step="1" value="3">`+
+          `<input type="number" class="text-input" id="wo-dry-days" min="0" max="14" step="1" value="1">`+
           `<div style="font-size:10.5px;color:var(--tx4);margin-top:4px;line-height:1.4">${t('woIrrigDaysHelp')}</div>`+
         `</div>`+
         `<div></div>`+
@@ -14894,8 +14894,8 @@ function commitAssignedTask(fieldId, taskList, notes, pickedDate, overrideRecord
     const typeEl = document.getElementById('wo-irrig-type');
     const daysEl = document.getElementById('wo-dry-days');
     irrigType = typeEl ? typeEl.value : null;
-    dryDays = (daysEl && daysEl.value) ? parseInt(daysEl.value) : 3;
-    if(!dryDays || dryDays < 1) dryDays = 3;
+    dryDays = (daysEl && daysEl.value !== '') ? parseInt(daysEl.value) : 1;
+    if(isNaN(dryDays) || dryDays < 0) dryDays = 0;   // 0 = no wet window
     // Reference time = scheduled irrigation date at noon (or now if today).
     const todayStr = new Date().toISOString().slice(0,10);
     const refIso = (pickedDate && pickedDate !== todayStr)
@@ -14905,8 +14905,10 @@ function commitAssignedTask(fieldId, taskList, notes, pickedDate, overrideRecord
     // Wet ground is a YELLOW advisory (scouting/inspection OK, no heavy
     // equipment or spray rigs) — NOT the red REI no-entry restriction, which is
     // reserved for chemical applications. Set a wetUntil window = dry-down days
-    // from the irrigation reference time.
-    f.wetUntil = new Date(new Date(refIso).getTime() + dryDays * 24 * 60 * 60 * 1000).toISOString();
+    // from the irrigation reference time. dryDays of 0 = no wet flag at all.
+    f.wetUntil = dryDays > 0
+      ? new Date(new Date(refIso).getTime() + dryDays * 24 * 60 * 60 * 1000).toISOString()
+      : null;
     db.saveField(fieldId);
   }
 
@@ -15004,14 +15006,16 @@ function commitWorkOrder(fieldId, mode, overrideRecord){
     const typeEl = document.getElementById('wo-irrig-type');
     const daysEl = document.getElementById('wo-dry-days');
     irrigType = typeEl ? typeEl.value : null;
-    dryDays = (daysEl && daysEl.value) ? parseInt(daysEl.value) : 3;
-    if(!dryDays || dryDays < 1) dryDays = 3;
+    dryDays = (daysEl && daysEl.value !== '') ? parseInt(daysEl.value) : 1;
+    if(isNaN(dryDays) || dryDays < 0) dryDays = 0;   // 0 = no wet window
     const refIso = (pickedDate && pickedDate !== todayStr)
       ? new Date(pickedDate + 'T12:00:00').toISOString()
       : new Date().toISOString();
     fIrr.lastIrrigationAt = refIso;
     // Yellow wet advisory, not red REI (see commitAssignedTask note).
-    fIrr.wetUntil = new Date(new Date(refIso).getTime() + dryDays * 24 * 60 * 60 * 1000).toISOString();
+    fIrr.wetUntil = dryDays > 0
+      ? new Date(new Date(refIso).getTime() + dryDays * 24 * 60 * 60 * 1000).toISOString()
+      : null;
     db.saveField(fieldId);
   }
 
