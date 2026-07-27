@@ -2459,7 +2459,20 @@ const db = {
         console.log('Restoring geometry for', geoFixes.length, 'blocks to the cloud:', geoFixes.join(', '));
         geoFixes.forEach(k=> { if(FIELDS[k]) db.saveField(k); });
       }
-      (actsRes.data||[]).forEach(a=>{ const f=FIELDS[a.field_id]; if(!f) return;
+      /* Block-migration safety: when a block is renamed or split, its old id can
+         still tag activity/task/issue/lot rows in the cloud. Remap those to the
+         successor block so they re-attach (and get corrected in the DB once)
+         instead of silently disappearing. Add an entry whenever a block id is
+         retired. */
+      const BLOCK_ALIASES = { 'M': 'ME' };   // old single "M" -> M East (ME) after the split
+      const aliasFixes = [];
+      const resolveField = (rawFid, table, rowId) => {
+        if(FIELDS[rawFid]) return FIELDS[rawFid];
+        const alt = BLOCK_ALIASES[rawFid];
+        if(alt && FIELDS[alt]){ aliasFixes.push([table, rowId, alt]); return FIELDS[alt]; }
+        return undefined;
+      };
+      (actsRes.data||[]).forEach(a=>{ const f=resolveField(a.field_id,'ucc_activities',a.id); if(!f) return;
         f.activities.push({id:a.id,type:a.type,coverage:a.coverage,performedBy:a.performed_by,
           performedAt:a.performed_at,notes:a.notes,photos:a.photos||[],reiHours:a.rei_hours,
           phiDays:a.phi_days,
@@ -2469,16 +2482,16 @@ const db = {
           otherTask:a.other_task||undefined,
           lotIds:a.lot_ids||[],override:a.override||undefined,
           inspection:a.inspection||undefined}); });
-      (issuesRes.data||[]).forEach(i=>{ const f=FIELDS[i.field_id]; if(!f) return;
+      (issuesRes.data||[]).forEach(i=>{ const f=resolveField(i.field_id,'ucc_issues',i.id); if(!f) return;
         f.issues.push({id:i.id,type:i.type,severity:i.severity,coverage:i.coverage,
           reportedBy:i.reported_by,reportedAt:i.reported_at,description:i.description,photos:i.photos||[],
           status:i.status,investigatingAt:i.investigating_at,resolvedAt:i.resolved_at,
           resolutionNotes:i.resolution_notes}); });
-      (lotsRes.data||[]).forEach(l=>{ const f=FIELDS[l.field_id]; if(!f) return;
+      (lotsRes.data||[]).forEach(l=>{ const f=resolveField(l.field_id,'ucc_lots',l.id); if(!f) return;
         f.lots.push({id:l.id,createdAt:l.created_at,harvestStart:l.harvest_start,harvestEnd:l.harvest_end,
           coverage:l.coverage,rows:l.rows,quantity:l.quantity,destination:l.destination,driver:l.driver,
           status:l.status,flaggedBy:l.flagged_by||[],history:l.history||[],packStyle:l.pack_style||''}); });
-      (tasksRes.data||[]).forEach(tk=>{ const f=FIELDS[tk.field_id]; if(!f) return;
+      (tasksRes.data||[]).forEach(tk=>{ const f=resolveField(tk.field_id,'ucc_assigned_tasks',tk.id); if(!f) return;
         f.assignedTasks.push({id:tk.id,tasks:tk.tasks||[],coverage:tk.coverage,crewSize:tk.crew_size,
           assignedTo:tk.assigned_to,assignedAt:tk.assigned_at,scheduledFor:tk.scheduled_for,
           sentVia:tk.sent_via,sentAt:tk.sent_at,status:tk.status,notes:tk.notes,completedAt:tk.completed_at,
@@ -2494,6 +2507,11 @@ const db = {
           playbookTagSetAt:pp.playbook_tag_set_at,lastIrrigationAt:pp.last_irrigation_at,
           activities:pp.activities||[],assignedTasks:pp.assigned_tasks||[],issues:pp.issues||[],
           lots:pp.lots||[],finalReiUntil:pp.final_rei_until,finalPhiUntil:pp.final_phi_until}); });
+      // One-time cloud correction for any rows remapped from a retired block id.
+      if(aliasFixes.length && DB_ENABLED){
+        console.log('Remapping', aliasFixes.length, 'child rows from retired blocks');
+        aliasFixes.forEach(([table,id,fid])=> dbQueue.enqueue('alias '+id, ()=> sb.from(table).update({field_id:fid}).eq('id',id)));
+      }
       Object.values(FIELDS).forEach(f=>{
         f.activities.sort((a,b)=> new Date(b.performedAt)-new Date(a.performedAt));
         f.issues.sort((a,b)=> new Date(b.reportedAt)-new Date(a.reportedAt));
@@ -19399,6 +19417,10 @@ async function boot(){
       // there's data to work with. After this, the DB is the source of truth.
       seedDemoData();
       await db.seedFromMemory();
+      // Blocks now exist in the cloud — re-hydrate so any activities/tasks that
+      // were already in the child tables re-attach in this same pass (avoids the
+      // blank-timeline blip right after a block-set change).
+      await db.load();
       loaded = true;
     }
   } else {
