@@ -254,6 +254,13 @@ html,body{height:100%;font-family:'DM Sans',sans-serif;background:var(--bg);colo
 .view-toggle{display:flex;gap:6px;padding:9px 16px;background:var(--surf);border-bottom:1px solid var(--bd);flex-shrink:0}
 .view-toggle-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;background:var(--bg);border:1px solid var(--bd);border-radius:9px;padding:8px;font-size:13px;font-weight:600;color:var(--tx2);cursor:pointer;font-family:inherit;transition:all .12s}
 .view-toggle-btn.active{background:var(--fc-red);color:#fff;border-color:var(--fc-red)}
+.multi-bar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:1600;display:flex;align-items:center;gap:12px;background:#1F2A44;color:#fff;border-radius:14px;padding:11px 14px;box-shadow:0 10px 30px rgba(0,0,0,.35);max-width:calc(100vw - 28px)}
+.multi-bar-info{font-size:13px;color:#E7EBF2;display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.multi-bar-info b{font-size:15px;color:#fff}
+.multi-bar-names{font-size:11px;color:#9FB0CE;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:44vw}
+.multi-bar-clear{background:transparent;border:1px solid #3A4A66;color:#C7D2E5;border-radius:9px;padding:8px 12px;font-size:12.5px;font-weight:600;font-family:inherit;cursor:pointer}
+.multi-bar-assign{background:#3B9E4A;border:none;color:#fff;border-radius:9px;padding:9px 15px;font-size:13.5px;font-weight:700;font-family:inherit;cursor:pointer;white-space:nowrap}
+.multi-bar-assign:active,.multi-bar-clear:active{transform:scale(.97)}
 .view-toggle-btn:active{transform:scale(.98)}
 
 /* LIST PANE — field cards */
@@ -1657,6 +1664,7 @@ body.has-sync-bar .help-fab{bottom:64px}
   <div class="view-toggle">
     <button class="view-toggle-btn active" id="vt-map" data-mode="map"><span style="font-size:14px">🗺</span> <span id="lbl-vt-map">Map</span></button>
     <button class="view-toggle-btn" id="vt-list" data-mode="list"><span style="font-size:14px">☰</span> <span id="lbl-vt-list">List</span></button>
+    <button class="view-toggle-btn" id="vt-multi" style="flex:0 0 auto;padding:8px 13px" title="Assign multiple blocks">👷 <span id="lbl-vt-multi">Multi</span></button>
   </div>
 
   <div style="position:relative;flex:1;display:flex" id="map-pane">
@@ -2870,6 +2878,9 @@ const I18N = {
       flashSaved:'Activity logged',
       // work order
       woTitle:'Assign Task',woSub:'Pick what needs to happen on this field',
+      multiBtn:'Multi',multiWoTitle:'Assign to multiple blocks',multiBlocks:'blocks',multiSelected:'blocks selected',multiSelected1:'block selected',
+      multiClear:'Clear',multiAssign:'Assign task',multiAssignedFlash:'blocks assigned',
+      multiHint:'Tap blocks to select, then Assign task',multiMsgBlocks:'Blocks',multiMsgTotal:'Total',acAbbrev:'ac',
       woTasksLabel:'Tasks',woTaskPlant:'Prune',woTaskIrrigate:'Irrigate',woTaskSpray:'Spray',
       woTaskSupplement:'Foliar / Nutrient',woTaskScout:'Scout / Inspect',woTaskHarvest:'Harvest',
       woTaskCultivate:'Repair',woTaskSidedress:'Fertilize',woTaskOther:'Other',
@@ -3517,6 +3528,9 @@ const I18N = {
       cancel:'Cancelar',save:'Guardar',
       flashSaved:'Actividad registrada',
       woTitle:'Asignar Tarea',woSub:'Elige qué necesita pasar en este campo',
+      multiBtn:'Varios',multiWoTitle:'Asignar a varios bloques',multiBlocks:'bloques',multiSelected:'bloques seleccionados',multiSelected1:'bloque seleccionado',
+      multiClear:'Borrar',multiAssign:'Asignar tarea',multiAssignedFlash:'bloques asignados',
+      multiHint:'Toque bloques para seleccionar, luego Asignar tarea',multiMsgBlocks:'Bloques',multiMsgTotal:'Total',acAbbrev:'ac',
       woTasksLabel:'Tareas',woTaskPlant:'Podar',woTaskIrrigate:'Regar',woTaskSpray:'Fumigar',
       woTaskSupplement:'Foliar / Nutriente',woTaskScout:'Explorar / Inspeccionar',woTaskHarvest:'Cosechar',
       woTaskCultivate:'Reparar',woTaskSidedress:'Fertilizar',woTaskOther:'Otro',
@@ -4238,6 +4252,9 @@ function fitToFields(){
 /* ── BOTTOM SHEET ──────────────────────────────────────────────────────── */
 function openSheet(id){
   const f = FIELDS[id]; if(!f) return;
+  // In multi-select mode a tap toggles the block into the selection instead of
+  // opening its detail sheet.
+  if(_multiSel.on){ toggleBlockSelect(id); return; }
   currentFieldId = id;
   const st = STATUS[effectiveStatus(f)] || STATUS.idle;
   const crop = f.crop ? (CROPS[f.crop] ? CROPS[f.crop][lang] : f.crop) : t('notSet');
@@ -5839,11 +5856,14 @@ function setFieldsViewMode(mode){
   } else {
     mapPane.style.display = 'none';
     listPane.style.display = 'flex';
+    // Multi-select is a map interaction; leaving the map exits the mode.
+    if(_multiSel.on){ _multiSel.on = false; const mb=document.getElementById('vt-multi'); if(mb) mb.classList.remove('active'); clearMultiSelect(); }
     renderFieldList();
   }
 }
 document.getElementById('vt-map').onclick = ()=> setFieldsViewMode('map');
 document.getElementById('vt-list').onclick = ()=> setFieldsViewMode('list');
+document.getElementById('vt-multi').onclick = ()=>{ if(_fieldsViewMode!=='map') setFieldsViewMode('map'); toggleMultiMode(); };
 
 /* ── I18N APPLY ────────────────────────────────────────────────────────── */
 function applyLang(){
@@ -5881,6 +5901,8 @@ function applyLang(){
   if(vtMap) vtMap.textContent = t('viewMap');
   const vtList = document.getElementById('lbl-vt-list');
   if(vtList) vtList.textContent = t('viewList');
+  const vtMulti = document.getElementById('lbl-vt-multi');
+  if(vtMulti) vtMulti.textContent = t('multiBtn');
   renderSummary();
   if(_fieldsViewMode === 'list') renderFieldList();
 }
@@ -14346,14 +14368,160 @@ const WO_TASKS = [
 ];
 let _woState = {tasks:new Set(), coverage:'full', crew:1, assignee:'', notes:''};
 
-function openWorkOrderModal(fieldId){
+/* ══ MULTI-BLOCK ASSIGN ═══════════════════════════════════════════════════
+   Select several blocks on the map, then assign the same task to the same
+   worker in one go. Built for irrigators, who get handed many blocks at once. */
+let _multiSel = { on:false, ids:new Set() };
+let _multiHighlights = {};
+let _woMultiIds = null;   // non-null array while the work order modal is in multi mode
+
+function toggleMultiMode(){
+  _multiSel.on = !_multiSel.on;
+  const btn = document.getElementById('vt-multi');
+  if(btn) btn.classList.toggle('active', _multiSel.on);
+  if(!_multiSel.on) clearMultiSelect();
+  else flash(t('multiHint'));
+  renderMultiBar();
+}
+
+function toggleBlockSelect(id){
+  if(!FIELDS[id]) return;
+  if(_multiSel.ids.has(id)){ _multiSel.ids.delete(id); removeHighlight(id); }
+  else { _multiSel.ids.add(id); addHighlight(id); }
+  renderMultiBar();
+}
+
+function addHighlight(id){
+  const f = FIELDS[id];
+  if(!f || !f.polygon || !map) return;
+  removeHighlight(id);
+  _multiHighlights[id] = L.polygon(f.polygon, {
+    color:'#FCBD30', weight:4, opacity:1, fill:true, fillColor:'#FCBD30',
+    fillOpacity:.22, interactive:false, className:'multi-hl'
+  }).addTo(map);
+}
+function removeHighlight(id){
+  if(_multiHighlights[id]){ try{ map.removeLayer(_multiHighlights[id]); }catch(e){} delete _multiHighlights[id]; }
+}
+function clearMultiSelect(){
+  Object.keys(_multiHighlights).forEach(id=> removeHighlight(id));
+  _multiSel.ids.clear();
+  renderMultiBar();
+}
+
+function renderMultiBar(){
+  let bar = document.getElementById('multi-bar');
+  const show = _multiSel.on && _multiSel.ids.size > 0;
+  if(!show){ if(bar) bar.style.display='none'; return; }
+  if(!bar){
+    bar = document.createElement('div'); bar.id='multi-bar'; bar.className='multi-bar';
+    document.body.appendChild(bar);
+  }
+  bar.style.display='flex';
+  const n = _multiSel.ids.size;
+  const names = [..._multiSel.ids].map(id=>FIELDS[id]?FIELDS[id].displayId:id).join(', ');
+  bar.innerHTML =
+    `<div class="multi-bar-info"><b>${n}</b> ${n===1?t('multiSelected1'):t('multiSelected')}`+
+      `<span class="multi-bar-names">${escapeHtml(names)}</span></div>`+
+    `<button class="multi-bar-clear" id="mb-clear">${t('multiClear')}</button>`+
+    `<button class="multi-bar-assign" id="mb-assign">👷 ${t('multiAssign')}</button>`;
+  document.getElementById('mb-clear').onclick = clearMultiSelect;
+  document.getElementById('mb-assign').onclick = ()=>{
+    const ids = [..._multiSel.ids];
+    openWorkOrderModal(ids[0], ids);
+  };
+}
+
+/* Combined work order message covering every selected block, each with its own
+   check-in link so the irrigator can check into blocks one at a time. */
+function buildMultiWorkOrderMessage(ids, assignee, crew, taskList, notes){
+  const baseUrl = window.location.href.split('#')[0].split('?')[0];
+  const tasksTxt = taskList.length ? taskList.map((t,i)=>(i+1)+'. '+t).join('\n') : '—';
+  let msg = t('woMsgHeader') + '\n';
+  if(assignee) msg += t('woMsgTo') + ': ' + assignee + '\n';
+  msg += t('woMsgCrew') + ': ' + crew + ' ' + (crew===1?t('woMsgWorker'):t('woMsgWorkers')) + '\n';
+  msg += '\n' + t('woMsgTasks') + ':\n' + tasksTxt + '\n';
+  if(notes) msg += '\n' + notes + '\n';
+  let totalAc = 0;
+  msg += '\n' + t('multiMsgBlocks') + ' (' + ids.length + '):\n';
+  ids.forEach(fid=>{
+    const f = FIELDS[fid]; if(!f) return;
+    totalAc += (f.acreage || 0);
+    const checkinUrl = baseUrl + '?field=' + fid + '&checkin=1#' + fid;
+    msg += '• ' + f.displayId + ' (' + fmtAcres(f) + ')\n   ' + t('woMsgCheckin') + ': ' + checkinUrl + '\n';
+  });
+  msg += '\n' + t('multiMsgTotal') + ': ' + totalAc.toFixed(1) + ' ' + t('acAbbrev');
+  return msg;
+}
+
+function saveAssignedTaskMulti(){
+  const ids = (_woMultiIds || []).slice();
+  if(!ids.length) return;
+  if(_woState.tasks.size === 0){ flash(t('woNoTasks'), true); return; }
+  const taskList = [..._woState.tasks].map(tid=>{ const tk=WO_TASKS.find(x=>x.id===tid); return tk?(lang==='es'?tk.keyEs:tk.keyEn):tid; });
+  const notes = (document.getElementById('wo-notes').value || '').trim();
+  const pickedDate = (document.getElementById('wo-date') && document.getElementById('wo-date').value) || new Date().toISOString().slice(0,10);
+  ids.forEach(fid=> commitAssignedTask(fid, taskList, notes, pickedDate, null, {silent:true}));
+  closeWorkOrderModal();
+  flash(ids.length + ' ' + t('multiAssignedFlash'));
+  clearMultiSelect();
+  renderFields(); renderSummary();
+}
+
+function sendWorkOrderMulti(mode){
+  const ids = (_woMultiIds || []).slice();
+  if(!ids.length) return;
+  if(_woState.tasks.size === 0){ flash(t('woNoTasks'), true); return; }
+  const assignee = (document.getElementById('wo-assignee').value || '').trim();
+  const crew = parseInt(document.getElementById('wo-crew').value || 1);
+  const notes = (document.getElementById('wo-notes').value || '').trim();
+  const pickedDate = (document.getElementById('wo-date') && document.getElementById('wo-date').value) || new Date().toISOString().slice(0,10);
+  const todayStr = new Date().toISOString().slice(0,10);
+  const status = pickedDate > todayStr ? 'scheduled' : 'sent';
+  const taskList = [..._woState.tasks].map(tid=>{ const tk=WO_TASKS.find(x=>x.id===tid); return tk?(lang==='es'?tk.keyEs:tk.keyEn):tid; });
+  const msg = buildMultiWorkOrderMessage(ids, assignee, crew, taskList, notes);
+  const now = new Date().toISOString();
+
+  ids.forEach(fid=>{
+    const rec = commitAssignedTask(fid, taskList, notes, pickedDate, null, {silent:true});
+    if(rec){
+      rec.assignedTo = assignee || null;
+      rec.crewSize   = crew;
+      rec.status     = status;
+      rec.sentVia    = status==='sent' ? mode : null;
+      rec.sentAt     = status==='sent' ? now : null;
+      rec.builtMessage = msg;
+      if(DB_ENABLED) db.saveTask(fid, rec);   // re-persist with the send details
+    }
+  });
+
+  if(status === 'sent'){
+    if(mode === 'wa'){
+      window.open('https://wa.me/?text=' + encodeURIComponent(msg), '_blank');
+      flash(t('woFlashSent'));
+    } else if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(msg).then(()=> flash(t('woFlashCopied')));
+    } else { prompt('Copy:', msg); }
+  } else {
+    flash(t('schedFlashSaved'));
+  }
+  closeWorkOrderModal();
+  clearMultiSelect();
+  renderFields(); renderSummary();
+}
+
+function openWorkOrderModal(fieldId, multiIds){
   if(!fieldId) return;
   const f = FIELDS[fieldId]; if(!f) return;
   _woState = {tasks:new Set(), coverage:'full', crew:1, assignee:'', notes:''};
+  _woMultiIds = (multiIds && multiIds.length > 1) ? multiIds.slice() : null;
+  const subText = _woMultiIds
+    ? `${_woMultiIds.length} ${t('multiBlocks')}: ` + _woMultiIds.map(id=>FIELDS[id]?FIELDS[id].displayId:id).join(', ')
+    : `${f.displayId} · ${t('woSub')}`;
 
   document.getElementById('modal-wo-body').innerHTML =
-    `<div class="modal-title">${t('woTitle')}</div>`+
-    `<div class="modal-sub">${f.displayId} · ${t('woSub')}</div>`+
+    `<div class="modal-title">${_woMultiIds ? t('multiWoTitle') : t('woTitle')}</div>`+
+    `<div class="modal-sub">${escapeHtml(subText)}</div>`+
 
     `<div class="form-row">`+
       `<div class="form-label">${t('woTasksLabel')}</div>`+
@@ -14540,11 +14708,11 @@ function openWorkOrderModal(fieldId){
 
   document.getElementById('wo-cancel').onclick = closeWorkOrderModal;
   document.getElementById('wo-cancel2').onclick = closeWorkOrderModal;
-  document.getElementById('wo-copy').onclick = ()=> sendWorkOrder(fieldId, 'copy');
-  document.getElementById('wo-wa').onclick = ()=> sendWorkOrder(fieldId, 'wa');
+  document.getElementById('wo-copy').onclick = ()=> _woMultiIds ? sendWorkOrderMulti('copy') : sendWorkOrder(fieldId, 'copy');
+  document.getElementById('wo-wa').onclick = ()=> _woMultiIds ? sendWorkOrderMulti('wa') : sendWorkOrder(fieldId, 'wa');
   // "Save Task" — assign without sending. Status='scheduled' if a future date;
   // otherwise just sits on the field as pending (status='scheduled' for today).
-  document.getElementById('wo-save').onclick = ()=> saveAssignedTaskOnly(fieldId);
+  document.getElementById('wo-save').onclick = ()=> _woMultiIds ? saveAssignedTaskMulti() : saveAssignedTaskOnly(fieldId);
   // "Send to Worker →" — reveals the crew/assignee section and morphs the
   // action bar into the send buttons (Cancel / Copy / Send WhatsApp).
   document.getElementById('wo-step-send').onclick = ()=> {
@@ -14566,6 +14734,7 @@ function openWorkOrderModal(fieldId){
 function closeWorkOrderModal(){
   document.getElementById('modal-backdrop').classList.remove('open');
   document.getElementById('modal-wo').classList.remove('open');
+  _woMultiIds = null;
 }
 function buildWorkOrderMessage(fieldId, taskId){
   const f = FIELDS[fieldId];
@@ -14686,8 +14855,9 @@ function saveAssignedTaskOnly(fieldId){
   commitAssignedTask(fieldId, taskList, notes, pickedDate, null);
 }
 
-function commitAssignedTask(fieldId, taskList, notes, pickedDate, overrideRecord){
-  const taskId = 'wo_' + Date.now();
+function commitAssignedTask(fieldId, taskList, notes, pickedDate, overrideRecord, opts){
+  opts = opts || {};
+  const taskId = 'wo_' + Date.now() + '_' + fieldId;
   const f = FIELDS[fieldId];
   // Capture REI/PHI + chemical when a spray task is in the mix.
   const isSpray = _woState.tasks.has('spray');
@@ -14778,11 +14948,13 @@ function commitAssignedTask(fieldId, taskList, notes, pickedDate, overrideRecord
   FIELDS[fieldId].assignedTasks.unshift(taskRecord);
   if(DB_ENABLED) db.saveTask(fieldId, taskRecord);
 
+  if(opts.silent) return taskRecord;
   closeWorkOrderModal();
   flash(t('woFlashAssigned'));
   renderDetail(fieldId);
   renderFields();
   renderSummary();
+  return taskRecord;
 }
 
 function commitWorkOrder(fieldId, mode, overrideRecord){
